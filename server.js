@@ -18,14 +18,13 @@ app.use(express.json());
 // ─── CONFIG ──────────────────────────────────────────────
 const TMDB_KEY = "4e0d8acdbaf824338ac7bcf6a3ccfab6";
 const PORT = process.env.PORT || 3000;
-const HEADLESS = true;          // true pour production
-const CACHE_TTL = 45 * 60 * 1000; // 45 min (épisodes changent plus souvent)
+const HEADLESS = true;
+const CACHE_TTL = 45 * 60 * 1000;
 const NAV_TIMEOUT = 25000;
 const WAIT_AFTER_LOAD = 2500;
 const WAIT_AFTER_CLICK = 2000;
-const WAIT_FOR_EMBED_CHANGE = 10000; // Max 10s pour changement d'iframe
+const WAIT_FOR_EMBED_CHANGE = 10000;
 
-// URL publique (à modifier après déploiement)
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
 
 let browser = null;
@@ -59,7 +58,6 @@ function getVidzyId(url) {
   return m ? m[1] : null;
 }
 
-// ─── BUILD PROXY URL ─────────────────────────────────────
 function buildProxyM3U8(m3u8Url, embedUrl) {
   if (!m3u8Url || !embedUrl) return null;
   return `${PUBLIC_URL}/proxy/m3u8?url=${encodeURIComponent(m3u8Url)}&referer=${encodeURIComponent(embedUrl)}`;
@@ -231,20 +229,16 @@ async function scrapeSerie(serieUrl, episode, side = "left") {
     await page.goto(serieUrl, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT }).catch(() => {});
     await wait(WAIT_AFTER_LOAD);
 
-    // 1. Repérer l'embed actuel (Episode 1 par défaut)
     const oldEmbed = await getIframeEmbed(page);
     const oldId = getVidzyId(oldEmbed);
     console.log(`  ID Episode actuel (auto): ${oldId || "aucun"}`);
 
-    // 2. Si épisode 1 demandé et déjà chargé, on skip le clic
     if (parseInt(episode) === 1 && oldEmbed) {
        console.log("  Episode 1 demandé et déjà chargé.");
     } else {
-      // 3. Cliquer sur l'épisode voulu
       console.log(`  Clic sur épisode ${episode}...`);
       await clickEpisode(page, episode, side);
       
-      // 4. ATTENDRE que l'ID change
       console.log(`  Attente du changement d'iframe (max ${WAIT_FOR_EMBED_CHANGE/1000}s)...`);
       let newEmbed = null;
       const startTime = Date.now();
@@ -262,13 +256,10 @@ async function scrapeSerie(serieUrl, episode, side = "left") {
     const finalEmbed = await getIframeEmbed(page);
     console.log(`  Embed Final: ${finalEmbed || "❌"}`);
 
-    // 5. Extraire M3U8
     let m3u8 = null;
     if (finalEmbed) {
-      // Vider les M3U8 captés pendant le chargement (épisode précédent)
       store.m3u8s.clear();
       
-      // Tentative Rapide (HTTP Fetch + unpack)
       const r = await fetch(finalEmbed, { 
         headers: { 
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36",
@@ -286,7 +277,6 @@ async function scrapeSerie(serieUrl, episode, side = "left") {
         }
       }
 
-      // Fallback Puppeteer si pas trouvé
       if (!m3u8) {
         console.log("  🐢 Fallback Puppeteer pour M3U8...");
         await wait(3000);
@@ -318,15 +308,24 @@ async function getTmdbInfo(tmdbId) {
   };
 }
 
+// ─── FONCTION CORRIGÉE AVEC TOUS LES HEADERS ────────────
 async function searchFrenchStream(query) {
   const r = await fetch("https://french-stream.ac/engine/ajax/search.php", {
     method: "POST",
     headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
       "Referer": "https://french-stream.ac/",
+      "Origin": "https://french-stream.ac",
       "X-Requested-With": "XMLHttpRequest",
       "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-      "Origin": "https://french-stream.ac"
+      "Accept": "*/*",
+      "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+      "Sec-Ch-Ua": '"Chromium";v="122", "Not(A:Brand";v="24"',
+      "Sec-Ch-Ua-Mobile": "?0",
+      "Sec-Ch-Ua-Platform": '"Windows"',
+      "Sec-Fetch-Dest": "empty",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "same-origin"
     },
     body: "query=" + encodeURIComponent(query)
   });
@@ -386,7 +385,6 @@ async function getSerieSources(tmdbId, saison, episode) {
     return { ok: false, erreur: "Rien trouvé", titre: info.titre_fr, saison, episode };
   }
   
-  // ─── 3 LIENS DISTINCTS ─────────────────────────────────
   const proxyM3U8 = buildProxyM3U8(res.m3u8, res.embedUrl);
   
   console.log(`  3 liens prêts:`);
@@ -445,6 +443,7 @@ app.get("/proxy/m3u8", async (req, res) => {
   } catch (e) { res.status(500).send("Erreur: " + e.message); }
 });
 
+// ─── PROXY TS ────────────────────────────────────────────
 app.get("/proxy/ts", async (req, res) => {
   const { url, referer } = req.query;
   if (!url) return res.status(400).send("url manquante");
