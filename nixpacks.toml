@@ -1,0 +1,17 @@
+[phases.setup]
+nixPkgs = [
+  "chromium",
+  "nss",
+  "freetype",
+  "harfbuzz",
+  "ca-certificates",
+  "ttf-dejavu"
+]
+
+[phases.install]
+cmds = ["npm install"]
+
+[variables]
+PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"
+PUPPETEER_EXECUTABLE_PATH = "/run/current-system/sw/bin/chromium"
+HEADLESS = "true"
